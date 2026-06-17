@@ -256,14 +256,24 @@ class SoloGit:
         answer = input(f"{message} [o/N] ").strip().lower()
         return answer in ("o", "oui", "y", "yes")
 
+    @staticmethod
+    def _is_binary(path: Path) -> bool:
+        """Retourne True si le fichier est binaire (contient des octets nuls dans les 8 Ko)."""
+        try:
+            return b"\x00" in path.read_bytes()[:8192]
+        except Exception:
+            return True
+
     def _render_diff(self, old_path: Path, new_path: Optional[Path], rel_str: str) -> bool:
         """Affiche le diff coloré entre deux fichiers (style Claude Code). Retourne True si diff non vide."""
+        if self._is_binary(old_path) or (new_path and new_path.exists() and self._is_binary(new_path)):
+            return False
+
         try:
             old_lines = old_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
             new_lines = new_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True) \
                         if new_path and new_path.exists() else []
         except Exception:
-            print(f"  '{rel_str}' : diff impossible (fichier binaire).")
             return False
 
         raw_diff = list(difflib.unified_diff(old_lines, new_lines, n=3))
@@ -324,7 +334,7 @@ class SoloGit:
     # Commandes
     # ------------------------------------------------------------------
 
-    def commit(self, name: Optional[str] = None, description: str = ""):
+    def commit(self, name: Optional[str] = None, description: str = "", force: bool = False):
         auto_name = name is None
         if auto_name:
             name = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -340,7 +350,7 @@ class SoloGit:
             print("Aucune modification détectée par rapport au dernier commit.")
             return
 
-        if not auto_name:
+        if not force and not auto_name:
             existing = [c for c in history if self._commit_name(c) == name]
             if existing:
                 print(f"{YELLOW}Attention : un commit nommé '{name}' existe déjà ({existing[-1]['date']}).{RESET}")
@@ -623,6 +633,40 @@ class SoloGit:
         current, _ = self._scan_working_directory(save_objects=False)
         return self._diff_snapshots(previous, current)
 
+    def diff_commits(self, identifier1: str, identifier2: str):
+        """Affiche le diff entre deux commits (fichiers ajoutés, modifiés, supprimés + contenu)."""
+        history = self._load_history()
+        commit1 = self._find_commit(history, identifier1)
+        commit2 = self._find_commit(history, identifier2)
+        if not commit1:
+            raise SoloGitError(f"Le commit '{identifier1}' est introuvable.")
+        if not commit2:
+            raise SoloGitError(f"Le commit '{identifier2}' est introuvable.")
+
+        snap1 = commit1["snapshot"]
+        snap2 = commit2["snapshot"]
+        added, modified, deleted = self._diff_snapshots(snap1, snap2)
+
+        name1 = self._commit_name(commit1)
+        name2 = self._commit_name(commit2)
+        print(f"\n{BOLD}[{commit1['id']}] {name1}{RESET}  {DIM}→{RESET}  {BOLD}[{commit2['id']}] {name2}{RESET}")
+        print(f"{DIM}{commit1['date']}  →  {commit2['date']}{RESET}\n")
+
+        if not (added or modified or deleted):
+            print(f"  {GREEN}Les deux commits sont identiques.{RESET}")
+            return
+
+        print(f"  {GREEN}+{len(added)}{RESET}  {YELLOW}~{len(modified)}{RESET}  {RED}-{len(deleted)}{RESET}  fichier(s)\n")
+        self._print_change_summary(added, modified, deleted)
+
+        for rel_str in modified:
+            old_obj = self._resolve_object_path(snap1[rel_str])
+            new_obj = self._resolve_object_path(snap2[rel_str])
+            if old_obj and new_obj:
+                self._render_diff(old_obj, new_obj, rel_str)
+            else:
+                print(f"  {YELLOW}Objet manquant pour '{rel_str}', diff ignoré.{RESET}")
+
     def get_checkout_preview(self, commit_id: str) -> Tuple[List[str], List[str]]:
         """Retourne (fichiers_écrasés, fichiers_supprimés) pour un checkout."""
         history = self._load_history()
@@ -825,6 +869,44 @@ class SoloGit:
 # Découverte du dépôt
 # ----------------------------------------------------------------------
 
+def _run_with_spinner(message: str, fn, *args, **kwargs):
+    """Lance fn() dans un thread et affiche un spinner pendant l'exécution."""
+    import threading, time, itertools, io, contextlib
+    done        = threading.Event()
+    captured    = io.StringIO()
+    err         = [None]
+    tty         = sys.stdout  # sauvegardé avant que le thread redirige sys.stdout
+
+    def target():
+        try:
+            with contextlib.redirect_stdout(captured):
+                fn(*args, **kwargs)
+        except Exception as e:
+            err[0] = e
+        finally:
+            done.set()
+
+    threading.Thread(target=target, daemon=True).start()
+
+    for frame in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+        if done.is_set():
+            break
+        tty.write(f"\r{CYAN}{frame}{RESET}  {message}")
+        tty.flush()
+        time.sleep(0.08)
+
+    tty.write(f"\r{GREEN}✓{RESET}  {message}" + " " * 20 + "\n\n")
+    tty.flush()
+
+    for line in captured.getvalue().strip().splitlines():
+        if line:
+            tty.write(f"  {line}\n")
+    tty.flush()
+
+    if err[0]:
+        raise err[0]
+
+
 def find_repo_root(start: Path) -> Optional[Path]:
     current = start.resolve()
     while True:
@@ -898,7 +980,12 @@ def main():
     p.add_argument("identifier", help="Nom ou ID du commit.")
     p.add_argument("dest",       help="Dossier de destination.")
 
-    # 12. Extensions
+    # 12. Compare
+    p = subparsers.add_parser("compare", help="Comparer deux commits entre eux.")
+    p.add_argument("commit1", help="Nom ou ID du premier commit.")
+    p.add_argument("commit2", help="Nom ou ID du second commit.")
+
+    # 13. Extensions
     p = subparsers.add_parser("extensions", help="Voir ou modifier les extensions suivies/ignorées.")
     p.add_argument("--extension",    metavar="EXTS", default=None,
                    help='Extensions à suivre. Ex: --extension ".py .tex"')
@@ -936,7 +1023,9 @@ def main():
     args = parser.parse_args()
 
     if args.command == "init":
-        SoloGit(Path.cwd()).init(
+        _run_with_spinner(
+            "Initialisation du dépôt SoloGit…",
+            SoloGit(Path.cwd()).init,
             extensions=parse_extensions(args.extension),
             no_extensions=parse_extensions(args.no_extension),
         )
@@ -954,7 +1043,18 @@ def main():
             name, description = args.name, args.description
             if name is not None and " " in name and not description:
                 description, name = name, None
-            app.commit(name, description)
+            # Vérification doublon avant le spinner (input() ne peut pas tourner dans un thread)
+            force = False
+            if name:
+                history = app._load_history()
+                existing = [c for c in history if app._commit_name(c) == name]
+                if existing:
+                    print(f"{YELLOW}Attention : un commit nommé '{name}' existe déjà ({existing[-1]['date']}).{RESET}")
+                    if not SoloGit._confirm("Continuer quand même ?"):
+                        print("Annulé.")
+                        sys.exit(0)
+                    force = True
+            _run_with_spinner("Commit en cours…", app.commit, name, description, force=force)
         elif args.command == "status":
             app.status()
         elif args.command == "log":
@@ -977,6 +1077,8 @@ def main():
             app.restore(args.commit_id, args.file, force=args.force)
         elif args.command == "checkout":
             app.checkout(args.commit_id, force=args.force)
+        elif args.command == "compare":
+            app.diff_commits(args.commit1, args.commit2)
         elif args.command == "extensions":
             if args.show or (not args.extension and not args.no_extension):
                 if app.ignore_file.exists():

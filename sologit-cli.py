@@ -60,6 +60,7 @@ def with_spinner(message: str, fn, *args, **kwargs):
     result_holder = [None]
     error_holder  = [None]
     captured      = io.StringIO()
+    tty           = sys.stdout  # sauvegardé avant que le thread redirige sys.stdout
 
     def target():
         try:
@@ -70,25 +71,24 @@ def with_spinner(message: str, fn, *args, **kwargs):
         finally:
             done.set()
 
-    t = threading.Thread(target=target, daemon=True)
-    t.start()
+    threading.Thread(target=target, daemon=True).start()
 
     for frame in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
         if done.is_set():
             break
-        sys.stdout.write(f"\r  {CYAN}{frame}{RESET}  {message}")
-        sys.stdout.flush()
+        tty.write(f"\r  {CYAN}{frame}{RESET}  {message}")
+        tty.flush()
         time.sleep(0.08)
 
-    t.join()
-    sys.stdout.write(f"\r  {GREEN}✓{RESET}  {message}" + " " * 20 + "\n")
-    sys.stdout.flush()
+    tty.write(f"\r  {GREEN}✓{RESET}  {message}" + " " * 20 + "\n")
+    tty.flush()
 
     output = captured.getvalue().strip()
     if output:
-        print()
+        tty.write("\n")
         for line in output.split("\n"):
-            print(f"  {line}")
+            tty.write(f"  {line}\n")
+        tty.flush()
 
     if error_holder[0]:
         raise error_holder[0]
@@ -212,12 +212,12 @@ def _commit_label(app: "SoloGit", c: dict) -> str:
     return s
 
 
-def pick_commit(app: "SoloGit", history: List[dict]) -> Optional[dict]:
+def pick_commit(app: "SoloGit", history: List[dict], exclude_id: Optional[str] = None) -> Optional[dict]:
     if not history:
         print(f"  {DIM}Aucun commit dans l'historique.{RESET}\n")
         return None
 
-    reversed_history = list(reversed(history))
+    reversed_history = [c for c in reversed(history) if c["id"] != exclude_id]
     items = [{"label": _commit_label(app, c), "selectable": True} for c in reversed_history]
     items.append({"label": f"{DIM}{'─' * 40}{RESET}", "selectable": False})
     items.append({"label": f"{DIM}Annuler{RESET}", "selectable": True})
@@ -288,7 +288,20 @@ def action_commit(app: SoloGit):
     description = input("  Description   (Entrée = aucune)   : ").strip()
     if name and " " in name and not description:
         description, name = name, None
-    app.commit(name, description)
+
+    # Vérification doublon avant le spinner
+    force = False
+    if name:
+        history = app.get_history()
+        existing = [c for c in history if app.commit_name(c) == name]
+        if existing:
+            print(f"\n  {YELLOW}Un commit nommé '{name}' existe déjà ({existing[-1]['date']}).{RESET}\n")
+            if not confirm_arrows("Continuer quand même ?"):
+                print(f"  {DIM}Annulé.{RESET}")
+                return
+            force = True
+
+    with_spinner("Commit en cours…", app.commit, name, description, force=force)
 
 
 def action_log(app: SoloGit):
@@ -322,6 +335,27 @@ def action_diff(app: SoloGit):
         app.diff()
     else:
         app.diff(filepath=str(app.repo_root / choice))
+
+
+def action_diff_commits(app: SoloGit):
+    title("COMPARER DEUX COMMITS")
+    history = app.get_history()
+    if len(history) < 2:
+        print(f"  {DIM}Il faut au moins 2 commits pour pouvoir comparer.{RESET}")
+        return
+
+    print("  Commit de départ :\n")
+    commit1 = pick_commit(app, history)
+    if commit1 is None:
+        return
+
+    print(f"\n  Commit d'arrivée (comparé à [{commit1['id']}]) :\n")
+    commit2 = pick_commit(app, history, exclude_id=commit1["id"])
+    if commit2 is None:
+        return
+
+    print()
+    app.diff_commits(commit1["id"], commit2["id"])
 
 
 def action_restore(app: SoloGit):
@@ -551,7 +585,8 @@ MENU = [
     ("Commit",     "sauvegarder l'état actuel",          action_commit),
     ("Extensions", "modifier les fichiers suivis",      action_extensions),
     ("Log",        "historique des commits",            action_log),
-    ("Diff",     "comparer les modifications",         action_diff),
+    ("Diff",     "comparer vs le dernier commit",        action_diff),
+    ("Compare",  "diff entre deux commits",            action_diff_commits),
     ("Restore",  "restaurer un seul fichier",          action_restore),
     ("Checkout", "revenir à un commit complet",        action_checkout),
     None,
@@ -621,7 +656,7 @@ def main():
         choice = input("  Initialiser un dépôt dans ce dossier ? [o/N] : ").strip().lower()
         if choice in ("o", "oui", "y", "yes"):
             app = SoloGit(Path.cwd())
-            app.init()
+            with_spinner("Initialisation du dépôt SoloGit…", app.init)
             repo_root = Path.cwd()
         else:
             print(f"\n  {DIM}Lance sologit-cli depuis un dossier avec un dépôt sologit.{RESET}\n")
