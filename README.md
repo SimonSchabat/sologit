@@ -9,16 +9,34 @@ Un mini-système de versionnage local écrit en Python, inspiré de Git mais sim
 Aucune dépendance externe. Python 3.8+ suffit.
 
 ```bash
-# Rendre le script exécutable (optionnel)
-chmod +x sologit.py
+# Rendre les scripts exécutables
+chmod +x sologit.py sologit-cli.py
 
-# Créer un alias global pour l'utiliser partout (à ajouter dans ~/.zshrc ou ~/.bashrc)
-alias sologit="python3 ~/Desktop/sologit.py"
+# Accès global via symlinks (à faire une seule fois)
+sudo ln -sf ~/Documents/sologit/sologit.py    /usr/local/bin/sologit
+sudo ln -sf ~/Documents/sologit/sologit-cli.py /usr/local/bin/sologit-cli
 ```
+
+Tu peux ensuite taper `sologit` ou `sologit-cli` depuis n'importe quel dossier.
 
 ---
 
-## Démarrage rapide
+## Interface interactive (recommandée)
+
+```bash
+sologit-cli
+```
+
+Lance une interface en mode texte avec navigation au clavier :
+- **↑ ↓** pour naviguer dans les menus
+- **Entrée** pour valider
+- **q** pour annuler / revenir
+
+Les listes de commits et de fichiers sont également navigables à la flèche.
+
+---
+
+## Démarrage rapide (ligne de commande)
 
 ```bash
 sologit init                        # initialise le dépôt dans le dossier courant
@@ -37,7 +55,7 @@ sologit checkout save_1             # revient à l'état de save_1
 sologit init
 sologit init --extension ".tex .bib .py"       # suivre uniquement ces extensions
 sologit init --no_extension ".log .tmp"         # ignorer ces extensions
-sologit init --extension ".tex .bib" --no_extension ".bak"  # les deux combinés
+sologit init --extension ".tex .bib" --no_extension ".bak"
 ```
 
 Crée le dossier `.sologit/` et un fichier `.sologitignore` dans le répertoire courant.
@@ -53,6 +71,8 @@ sologit commit save_1 "descriptif du commit"   # nom + description
 sologit commit "descriptif avec espaces"        # description seule, nom = date auto
 ```
 
+Après chaque commit, les fichiers modifiés sont affichés avec un diff coloré (numéros de ligne, fond rouge/vert pour les suppressions/ajouts).
+
 Si un commit avec le même nom existe déjà, une confirmation est demandée.
 
 ---
@@ -63,7 +83,7 @@ Si un commit avec le même nom existe déjà, une confirmation est demandée.
 sologit status
 ```
 
-Affiche les fichiers ajoutés (`+`), modifiés (`~`) et supprimés (`-`) par rapport au dernier commit, sans rien enregistrer.
+Affiche les fichiers ajoutés (`+`), modifiés (`~`) et supprimés (`-`) par rapport au dernier commit.
 
 ---
 
@@ -73,6 +93,8 @@ Affiche les fichiers ajoutés (`+`), modifiés (`~`) et supprimés (`-`) par rap
 sologit log           # tous les commits
 sologit log -n 5      # les 5 derniers uniquement
 ```
+
+Les tags éventuels sont affichés en badges `[v1.0]` à côté du commit.
 
 ---
 
@@ -84,6 +106,32 @@ sologit diff main.tex               # diff d'un fichier précis
 sologit diff main.tex save_1        # comparaison avec un commit spécifique
 ```
 
+Affichage style Claude Code : numéros de ligne ancien/nouveau, fond coloré pour chaque ligne ajoutée ou supprimée.
+
+---
+
+### `extensions` — Modifier les filtres de fichiers
+
+```bash
+sologit extensions                                  # affiche le .sologitignore actuel
+sologit extensions --extension ".py .tex .bib"     # redéfinir la liste blanche
+sologit extensions --no_extension ".log .tmp .exe" # redéfinir la liste noire
+```
+
+Régénère le `.sologitignore` sans toucher à l'historique. Pratique pour changer les types de fichiers suivis après l'init.
+
+---
+
+### `tag` — Marquer un commit
+
+```bash
+sologit tag save_1 v1.0       # ajouter un tag
+sologit tag                    # lister tous les tags
+sologit tag --delete v1.0      # supprimer un tag
+```
+
+Les tags apparaissent dans `sologit log` sous forme de badges.
+
 ---
 
 ### `show` — Détails d'un commit
@@ -92,7 +140,7 @@ sologit diff main.tex save_1        # comparaison avec un commit spécifique
 sologit show save_1
 ```
 
-Affiche la liste des fichiers du commit avec leur taille et leur hash. Ne touche pas à l'espace de travail.
+Affiche la liste des fichiers du commit avec leur taille et leur hash.
 
 ---
 
@@ -126,8 +174,6 @@ sologit amend --description "nouvelle description"
 sologit amend --name v2 --description "version corrigée"
 ```
 
-Ne crée pas de nouveau commit, modifie uniquement le nom et/ou la description du dernier.
-
 ---
 
 ### `undo` — Annuler le dernier commit
@@ -137,7 +183,7 @@ sologit undo
 sologit undo --force    # sans confirmation
 ```
 
-Supprime le dernier commit de l'historique et restaure l'espace de travail à l'état du commit précédent. Une sauvegarde est créée avant.
+Supprime le dernier commit de l'historique et restaure l'espace de travail à l'état précédent.
 
 ---
 
@@ -156,8 +202,6 @@ sologit export save_1 ./livraison
 sologit export save_1 ~/Desktop/version_finale
 ```
 
-Copie tous les fichiers du commit dans le dossier de destination, en préservant l'arborescence.
-
 ---
 
 ### `stats` — Statistiques du dépôt
@@ -170,9 +214,19 @@ Affiche le nombre de commits, l'espace disque utilisé, et les objets orphelins 
 
 ---
 
+### `fsck` — Vérifier l'intégrité du dépôt
+
+```bash
+sologit fsck
+```
+
+Vérifie que chaque objet référencé dans l'historique existe et que son hash correspond au contenu. Signale les objets manquants, corrompus ou orphelins.
+
+---
+
 ## Le fichier `.sologitignore`
 
-Créé automatiquement à l'`init`. Fonctionne comme `.gitignore` avec support de la négation `!`.
+Créé automatiquement à l'`init`, modifiable avec `sologit extensions`. Fonctionne comme `.gitignore` avec support de la négation `!`.
 
 ```
 # Ignorer des extensions
@@ -194,7 +248,7 @@ Les dossiers `.sologit`, `.git`, `__pycache__`, `venv` et `env` sont toujours ig
 
 ## Identifier un commit
 
-Toutes les commandes (`checkout`, `restore`, `diff`, `show`, `rename`, `export`) acceptent :
+Toutes les commandes (`checkout`, `restore`, `diff`, `show`, `rename`, `export`, `tag`…) acceptent :
 - le **nom** du commit : `save_1`
 - le **préfixe de l'ID** (7 caractères) : `3f46276`
 
@@ -206,10 +260,12 @@ En cas de doublon de nom, le commit le plus récent est utilisé.
 
 ```
 .sologit/
-├── history.json        # historique de tous les commits
+├── history.json        # historique de tous les commits (JSON)
 ├── objects/            # contenu des fichiers (content-addressed, sous-dossiers ab/cdef…)
 │   └── ab/
 │       └── cdef1234…
 └── backups/            # sauvegardes automatiques créées avant chaque écrasement
     └── 20260617_143022/
 ```
+
+Chaque objet est identifié par son hash SHA-1. Un même fichier non modifié n'est stocké qu'une seule fois, quel que soit le nombre de commits qui le référencent.

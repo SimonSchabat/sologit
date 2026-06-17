@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import sys
 import shutil
 import hashlib
@@ -16,7 +17,11 @@ RED    = "\033[91m"
 YELLOW = "\033[93m"
 CYAN   = "\033[96m"
 BOLD   = "\033[1m"
+DIM    = "\033[2m"
 RESET  = "\033[0m"
+
+_BG_RED   = "\033[48;5;52m"   # fond rouge foncé (diff)
+_BG_GREEN = "\033[48;5;22m"   # fond vert foncé (diff)
 
 REPO_DIR_NAME  = ".sologit"
 IGNORE_FILE_NAME = ".sologitignore"
@@ -252,35 +257,64 @@ class SoloGit:
         return answer in ("o", "oui", "y", "yes")
 
     def _show_file_diff(self, abs_path: Path, rel_str: str, target_commit: dict) -> bool:
-        """Affiche le diff d'un fichier vs un commit. Retourne True si des différences existent."""
+        """Affiche le diff d'un fichier vs un commit à la manière de Claude Code."""
         last_hash = target_commit["snapshot"].get(rel_str)
         if not last_hash:
             print(f"  '{rel_str}' n'existait pas dans [{target_commit['id']}].")
             return False
-        if self._hash_file(abs_path) == last_hash:
+        if abs_path.exists() and self._hash_file(abs_path) == last_hash:
             return False
         old_path = self._resolve_object_path(last_hash)
         if old_path is None:
             print(f"  Objet manquant pour '{rel_str}' (dépôt corrompu ?).")
             return False
         try:
-            with open(old_path, "r", encoding="utf-8", errors="replace") as f1, \
-                 open(abs_path,  "r", encoding="utf-8", errors="replace") as f2:
-                diff_lines = list(difflib.unified_diff(
-                    f1.readlines(), f2.readlines(),
-                    fromfile=f"a/{rel_str} (Commit {target_commit['id']})",
-                    tofile=f"b/{rel_str} (Espace de travail)",
-                    n=3
-                ))
-            for line in diff_lines:
-                if   line.startswith("+") and not line.startswith("+++"): print(f"{GREEN}{line.strip()}{RESET}")
-                elif line.startswith("-") and not line.startswith("---"): print(f"{RED}{line.strip()}{RESET}")
-                elif line.startswith("@@"):                                print(f"{CYAN}{line.strip()}{RESET}")
-                else:                                                       print(line.strip())
-            return True
-        except UnicodeDecodeError:
+            old_lines = old_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+            new_lines = abs_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True) \
+                        if abs_path.exists() else []
+        except Exception:
             print(f"  '{rel_str}' : diff impossible (fichier binaire).")
             return False
+
+        raw_diff = list(difflib.unified_diff(old_lines, new_lines, n=3))
+        if not raw_diff:
+            return False
+
+        deleted_note = f"  {RED}(supprimé){RESET}" if not abs_path.exists() else ""
+        print(f"\n  {BOLD}{CYAN}{rel_str}{RESET}{deleted_note}")
+        print(f"  {'─' * 56}")
+
+        old_line = new_line = 0
+        for raw in raw_diff:
+            line = raw.rstrip("\n\r")
+            if line.startswith("---") or line.startswith("+++"):
+                continue
+            if line.startswith("@@"):
+                m = re.search(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)", line)
+                if m:
+                    old_line = int(m.group(1)) - 1
+                    new_line = int(m.group(2)) - 1
+                    rest     = m.group(3).strip()
+                    hunk     = f"@@ -{m.group(1)} +{m.group(2)} @@"
+                    suffix   = f"  {DIM}{rest}{RESET}" if rest else ""
+                    print(f"  {DIM}{CYAN}{'':9s}  {hunk}{RESET}{suffix}")
+            elif line.startswith("-"):
+                old_line += 1
+                content  = line[1:]
+                gutter   = f"{DIM}{old_line:4d}     {RESET}"
+                print(f"  {gutter} {_BG_RED}{RED}- {content}\033[K{RESET}")
+            elif line.startswith("+"):
+                new_line += 1
+                content  = line[1:]
+                gutter   = f"{DIM}     {new_line:4d}{RESET}"
+                print(f"  {gutter} {_BG_GREEN}{GREEN}+ {content}\033[K{RESET}")
+            else:
+                old_line += 1
+                new_line += 1
+                content  = line[1:] if line.startswith(" ") else line
+                gutter   = f"{DIM}{old_line:4d} {new_line:4d}{RESET}"
+                print(f"  {gutter}  {DIM}│{RESET} {content}")
+        return True
 
     # ------------------------------------------------------------------
     # Commandes
@@ -293,7 +327,8 @@ class SoloGit:
 
         current_state, files_saved = self._scan_working_directory(save_objects=True)
         history = self._load_history()
-        previous_snapshot = history[-1]["snapshot"] if history else {}
+        previous_commit   = history[-1] if history else None
+        previous_snapshot = previous_commit["snapshot"] if previous_commit else {}
 
         added, modified, deleted = self._diff_snapshots(previous_snapshot, current_state)
 
@@ -317,11 +352,17 @@ class SoloGit:
                          "name": name, "description": description, "snapshot": current_state})
         self.history_file.write_text(json.dumps(history, indent=4))
 
-        print(f"[{commit_id}] Commit effectué : '{name}'")
+        print(f"\n[{commit_id}] Commit effectué : '{name}'")
         if description:
-            print(f"  {description}")
-        print(f"({files_saved} nouveaux objets uniques enregistrés)")
+            print(f"  {CYAN}{description}{RESET}")
+        print(f"  {DIM}{files_saved} nouveaux objets  ·  "
+              f"+{len(added)}  ~{len(modified)}  -{len(deleted)}{RESET}")
+
         self._print_change_summary(added, modified, deleted)
+
+        if previous_commit and modified:
+            for rel_str in modified:
+                self._show_file_diff(self.repo_root / rel_str, rel_str, previous_commit)
 
     def status(self):
         history = self._load_history()
@@ -341,9 +382,11 @@ class SoloGit:
             return
         commits = history[-n:] if n else history
         for commit in reversed(commits):
-            name = self._commit_name(commit)
+            name        = self._commit_name(commit)
             description = commit.get("description", "")
-            print(f"{YELLOW}[{commit['id']}]{RESET} - {commit['date']} ({len(commit['snapshot'])} fichier(s) suivis)")
+            tags        = commit.get("tags", [])
+            tag_badges  = "  " + "  ".join(f"{CYAN}[{t}]{RESET}" for t in tags) if tags else ""
+            print(f"{YELLOW}[{commit['id']}]{RESET} - {commit['date']} ({len(commit['snapshot'])} fichier(s) suivis){tag_badges}")
             print(f"  {name}")
             if description:
                 print(f"  {CYAN}{description}{RESET}")
@@ -373,7 +416,6 @@ class SoloGit:
                 print(f"Aucune modification par rapport au commit [{target_commit['id']}].")
                 return
             for rel_str in modified:
-                print(f"\n{BOLD}=== {rel_str} ==={RESET}")
                 self._show_file_diff(self.repo_root / rel_str, rel_str, target_commit)
 
     def amend(self, new_name: Optional[str] = None, new_description: Optional[str] = None):
@@ -562,6 +604,137 @@ class SoloGit:
         name = self._commit_name(commit)
         print(f"Export du commit [{commit['id']}] '{name}' terminé : {exported} fichier(s) → '{dest}'.")
 
+    # ------------------------------------------------------------------
+    # API publique pour les interfaces externes (CLI, plugins…)
+    # ------------------------------------------------------------------
+
+    def get_history(self) -> List[dict]:
+        """Retourne l'historique complet des commits."""
+        return self._load_history()
+
+    def get_pending_changes(self) -> Tuple[List[str], List[str], List[str]]:
+        """Retourne (ajoutés, modifiés, supprimés) vs le dernier commit."""
+        history  = self._load_history()
+        previous = history[-1]["snapshot"] if history else {}
+        current, _ = self._scan_working_directory(save_objects=False)
+        return self._diff_snapshots(previous, current)
+
+    def get_checkout_preview(self, commit_id: str) -> Tuple[List[str], List[str]]:
+        """Retourne (fichiers_écrasés, fichiers_supprimés) pour un checkout."""
+        history = self._load_history()
+        target  = self._find_commit(history, commit_id)
+        if not target:
+            raise SoloGitError(f"Le commit '{commit_id}' est introuvable.")
+        current, _ = self._scan_working_directory(save_objects=False)
+        snap          = target["snapshot"]
+        changed_files = sorted(f for f, h in snap.items() if current.get(f) != h)
+        extra_files   = sorted(set(current) - set(snap))
+        return changed_files, extra_files
+
+    def commit_name(self, commit: dict) -> str:
+        """Retourne le nom lisible d'un commit (compatibilité ancien champ 'message')."""
+        return self._commit_name(commit)
+
+    def set_extensions(self, extensions: Optional[List[str]] = None,
+                       no_extensions: Optional[List[str]] = None):
+        """Régénère .sologitignore avec les nouvelles règles d'extensions."""
+        new_content = self._build_sologitignore(extensions, no_extensions)
+        self.ignore_file.write_text(new_content)
+        self._ignore_patterns = None  # invalide le cache
+        print("Fichier .sologitignore mis à jour.")
+        if extensions:
+            print(f"  Suivi    : {', '.join(extensions)}")
+        if no_extensions:
+            print(f"  Ignorés  : {', '.join(no_extensions)}")
+        if not extensions and not no_extensions:
+            print("  (aucun filtre — tous les fichiers seront suivis)")
+
+    def tag(self, identifier: Optional[str] = None, tag_name: Optional[str] = None,
+            delete: bool = False, list_tags: bool = False):
+        history = self._load_history()
+
+        if list_tags or (not identifier and not delete):
+            all_tags = [(c, t) for c in history for t in c.get("tags", [])]
+            if not all_tags:
+                print("Aucun tag défini.")
+            else:
+                for commit, t in all_tags:
+                    name = self._commit_name(commit)
+                    print(f"  {CYAN}{t:<15}{RESET} [{commit['id']}] {name}  {DIM}({commit['date'][:10]}){RESET}")
+            return
+
+        if delete and tag_name:
+            removed = 0
+            for commit in history:
+                tags = commit.get("tags", [])
+                if tag_name in tags:
+                    tags.remove(tag_name)
+                    commit["tags"] = tags
+                    removed += 1
+            if removed:
+                self.history_file.write_text(json.dumps(history, indent=4))
+                print(f"Tag '{CYAN}{tag_name}{RESET}' supprimé ({removed} commit(s) mis à jour).")
+            else:
+                print(f"Tag '{tag_name}' introuvable.")
+            return
+
+        if identifier and tag_name:
+            commit = self._find_commit(history, identifier)
+            if not commit:
+                raise SoloGitError(f"Le commit '{identifier}' est introuvable.")
+            tags = commit.setdefault("tags", [])
+            if tag_name in tags:
+                print(f"Le commit [{commit['id']}] a déjà le tag '{tag_name}'.")
+                return
+            tags.append(tag_name)
+            self.history_file.write_text(json.dumps(history, indent=4))
+            name = self._commit_name(commit)
+            print(f"Tag '{CYAN}{tag_name}{RESET}' ajouté au commit [{commit['id']}] '{name}'.")
+            return
+
+        raise SoloGitError(
+            "Usage : sologit tag <commit> <tag>  |  sologit tag --delete <tag>  |  sologit tag"
+        )
+
+    def fsck(self):
+        history      = self._load_history()
+        issues: List[str] = []
+        referenced: set   = set()
+
+        for commit in history:
+            name = self._commit_name(commit)
+            for rel_str, file_hash in commit["snapshot"].items():
+                referenced.add(file_hash)
+                obj_path = self._resolve_object_path(file_hash)
+                if obj_path is None:
+                    issues.append(f"[{commit['id']}] '{name}' : objet manquant pour '{rel_str}' ({file_hash[:8]})")
+                else:
+                    actual = self._hash_file(obj_path)
+                    if actual != file_hash:
+                        issues.append(
+                            f"[{commit['id']}] '{name}' : corrompu '{rel_str}' "
+                            f"(attendu {file_hash[:8]}, lu {actual[:8]})"
+                        )
+
+        orphan_count = sum(
+            1 for f in self.objects_dir.rglob("*")
+            if f.is_file() and self._hash_from_object_path(f) not in referenced
+        )
+
+        print(f"{BOLD}Vérification d'intégrité{RESET}  ({self.base_dir})\n")
+        print(f"  Commits vérifiés  : {len(history)}")
+        print(f"  Objets référencés : {len(referenced)}")
+
+        if issues:
+            print(f"\n  {RED}{BOLD}{len(issues)} problème(s) détecté(s) :{RESET}")
+            for issue in issues:
+                print(f"  {RED}✗ {issue}{RESET}")
+        else:
+            print(f"\n  {GREEN}✓ Aucun problème — le dépôt est intègre.{RESET}")
+
+        if orphan_count:
+            print(f"  {YELLOW}⚠  {orphan_count} objet(s) orphelin(s) (voir 'sologit stats'){RESET}")
+
     def restore(self, commit_id: str, filepath: str, force: bool = False):
         history = self._load_history()
         commit_to_restore = self._find_commit(history, commit_id)
@@ -658,7 +831,8 @@ def find_repo_root(start: Path) -> Optional[Path]:
         current = current.parent
 
 
-def _parse_extensions(raw: Optional[str]) -> Optional[List[str]]:
+def parse_extensions(raw: Optional[str]) -> Optional[List[str]]:
+    """Convertit une chaîne d'extensions en liste (.py .tex → ['.py', '.tex'])."""
     if not raw:
         return None
     exts = [p if p.startswith(".") else f".{p}" for p in raw.strip().split()]
@@ -720,7 +894,27 @@ def main():
     p.add_argument("identifier", help="Nom ou ID du commit.")
     p.add_argument("dest",       help="Dossier de destination.")
 
-    # 12. Restore
+    # 12. Extensions
+    p = subparsers.add_parser("extensions", help="Voir ou modifier les extensions suivies/ignorées.")
+    p.add_argument("--extension",    metavar="EXTS", default=None,
+                   help='Extensions à suivre. Ex: --extension ".py .tex"')
+    p.add_argument("--no_extension", metavar="EXTS", default=None,
+                   help='Extensions à ignorer. Ex: --no_extension ".log .tmp"')
+    p.add_argument("--show", "-s", action="store_true",
+                   help="Afficher le .sologitignore actuel.")
+
+    # 13. Tag
+    p = subparsers.add_parser("tag", help="Tagger un commit (v1.0, release…).")
+    p.add_argument("identifier", nargs="?", default=None, help="Nom ou ID du commit.")
+    p.add_argument("tag_name",   nargs="?", default=None, help="Nom du tag à ajouter.")
+    p.add_argument("--delete", "-d", metavar="TAG", default=None,
+                   help="Supprimer ce tag de tous les commits.")
+    p.add_argument("--list",   "-l", action="store_true", help="Lister tous les tags.")
+
+    # 13. Fsck
+    subparsers.add_parser("fsck", help="Vérifier l'intégrité du dépôt.")
+
+    # 14. Restore
     p = subparsers.add_parser("restore", help="Restaurer un seul fichier depuis le passé.")
     p.add_argument("commit_id", help="Nom ou ID du commit.")
     p.add_argument("file",      help="Fichier à restaurer.")
@@ -739,8 +933,8 @@ def main():
 
     if args.command == "init":
         SoloGit(Path.cwd()).init(
-            extensions=_parse_extensions(args.extension),
-            no_extensions=_parse_extensions(args.no_extension),
+            extensions=parse_extensions(args.extension),
+            no_extensions=parse_extensions(args.no_extension),
         )
         return
 
@@ -779,6 +973,26 @@ def main():
             app.restore(args.commit_id, args.file, force=args.force)
         elif args.command == "checkout":
             app.checkout(args.commit_id, force=args.force)
+        elif args.command == "extensions":
+            if args.show or (not args.extension and not args.no_extension):
+                if app.ignore_file.exists():
+                    print(app.ignore_file.read_text())
+                else:
+                    print("Aucun fichier .sologitignore.")
+            else:
+                app.set_extensions(
+                    extensions=parse_extensions(args.extension),
+                    no_extensions=parse_extensions(args.no_extension),
+                )
+        elif args.command == "tag":
+            if args.delete:
+                app.tag(tag_name=args.delete, delete=True)
+            elif args.list or (not args.identifier and not args.tag_name):
+                app.tag(list_tags=True)
+            else:
+                app.tag(identifier=args.identifier, tag_name=args.tag_name)
+        elif args.command == "fsck":
+            app.fsck()
     except SoloGitError as e:
         print(f"Erreur : {e}")
         sys.exit(1)
