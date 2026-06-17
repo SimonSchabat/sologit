@@ -256,22 +256,12 @@ class SoloGit:
         answer = input(f"{message} [o/N] ").strip().lower()
         return answer in ("o", "oui", "y", "yes")
 
-    def _show_file_diff(self, abs_path: Path, rel_str: str, target_commit: dict) -> bool:
-        """Affiche le diff d'un fichier vs un commit à la manière de Claude Code."""
-        last_hash = target_commit["snapshot"].get(rel_str)
-        if not last_hash:
-            print(f"  '{rel_str}' n'existait pas dans [{target_commit['id']}].")
-            return False
-        if abs_path.exists() and self._hash_file(abs_path) == last_hash:
-            return False
-        old_path = self._resolve_object_path(last_hash)
-        if old_path is None:
-            print(f"  Objet manquant pour '{rel_str}' (dépôt corrompu ?).")
-            return False
+    def _render_diff(self, old_path: Path, new_path: Optional[Path], rel_str: str) -> bool:
+        """Affiche le diff coloré entre deux fichiers (style Claude Code). Retourne True si diff non vide."""
         try:
             old_lines = old_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-            new_lines = abs_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True) \
-                        if abs_path.exists() else []
+            new_lines = new_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True) \
+                        if new_path and new_path.exists() else []
         except Exception:
             print(f"  '{rel_str}' : diff impossible (fichier binaire).")
             return False
@@ -280,7 +270,7 @@ class SoloGit:
         if not raw_diff:
             return False
 
-        deleted_note = f"  {RED}(supprimé){RESET}" if not abs_path.exists() else ""
+        deleted_note = f"  {RED}(supprimé){RESET}" if not (new_path and new_path.exists()) else ""
         print(f"\n  {BOLD}{CYAN}{rel_str}{RESET}{deleted_note}")
         print(f"  {'─' * 56}")
 
@@ -315,6 +305,20 @@ class SoloGit:
                 gutter   = f"{DIM}{old_line:4d} {new_line:4d}{RESET}"
                 print(f"  {gutter}  {DIM}│{RESET} {content}")
         return True
+
+    def _show_file_diff(self, abs_path: Path, rel_str: str, target_commit: dict) -> bool:
+        """Affiche le diff d'un fichier de l'espace de travail vs un commit."""
+        last_hash = target_commit["snapshot"].get(rel_str)
+        if not last_hash:
+            print(f"  '{rel_str}' n'existait pas dans [{target_commit['id']}].")
+            return False
+        if abs_path.exists() and self._hash_file(abs_path) == last_hash:
+            return False
+        old_path = self._resolve_object_path(last_hash)
+        if old_path is None:
+            print(f"  Objet manquant pour '{rel_str}' (dépôt corrompu ?).")
+            return False
+        return self._render_diff(old_path, abs_path, rel_str)
 
     # ------------------------------------------------------------------
     # Commandes

@@ -13,12 +13,29 @@ No external dependencies. Python 3.8+ is all you need.
 ```bash
 # Make the scripts executable
 chmod +x sologit.py sologit-cli.py
+```
 
-# Global access via symlinks (one-time setup)
+Then choose one of the two methods below to make them accessible from anywhere:
+
+**Option 1 — Symlinks in `/usr/local/bin/` (recommended)**
+
+```bash
 # Replace /path/to/ with the folder where the files are stored
-sudo ln -sf /path/to/sologit.py    /usr/local/bin/sologit
+sudo ln -sf /path/to/sologit.py     /usr/local/bin/sologit
 sudo ln -sf /path/to/sologit-cli.py /usr/local/bin/sologit-cli
 ```
+
+**Option 2 — Aliases in your shell config**
+
+```bash
+# On macOS (zsh, default since macOS Catalina) → edit ~/.zshrc
+# On Linux or older macOS (bash) → edit ~/.bashrc
+
+alias sologit="python3 /path/to/sologit.py"
+alias sologit-cli="python3 /path/to/sologit-cli.py"
+```
+
+Then reload your shell: `source ~/.zshrc` (or `source ~/.bashrc`).
 
 You can then run `sologit` or `sologit-cli` from any directory.
 

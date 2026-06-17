@@ -13,12 +13,29 @@ Aucune dépendance externe. Python 3.8+ suffit.
 ```bash
 # Rendre les scripts exécutables
 chmod +x sologit.py sologit-cli.py
+```
 
-# Accès global via symlinks (à faire une seule fois)
+Ensuite, choisis l'une des deux méthodes pour y accéder depuis n'importe quel dossier :
+
+**Option 1 — Symlinks dans `/usr/local/bin/` (recommandé)**
+
+```bash
 # Remplace /chemin/vers/ par le dossier où se trouvent les fichiers
-sudo ln -sf /chemin/vers/sologit.py    /usr/local/bin/sologit
+sudo ln -sf /chemin/vers/sologit.py     /usr/local/bin/sologit
 sudo ln -sf /chemin/vers/sologit-cli.py /usr/local/bin/sologit-cli
 ```
+
+**Option 2 — Alias dans la config du shell**
+
+```bash
+# Sur macOS (zsh, shell par défaut depuis macOS Catalina) → édite ~/.zshrc
+# Sur Linux ou ancien macOS (bash) → édite ~/.bashrc
+
+alias sologit="python3 /chemin/vers/sologit.py"
+alias sologit-cli="python3 /chemin/vers/sologit-cli.py"
+```
+
+Puis recharge le shell : `source ~/.zshrc` (ou `source ~/.bashrc`).
 
 Tu peux ensuite taper `sologit` ou `sologit-cli` depuis n'importe quel dossier.
 
