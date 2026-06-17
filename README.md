@@ -1,194 +1,196 @@
 # SoloGit
 
-Un mini-système de versionnage local écrit en Python, inspiré de Git mais simplifié pour un usage solo. Pas de réseau, pas de serveur — tout est stocké dans un dossier `.sologit/` à la racine du projet.
+[🇫🇷 Version française](README.fr.md)
+
+A lightweight local versioning tool written in Python, inspired by Git but simplified for solo use. No network, no server — everything is stored in a `.sologit/` folder at the root of your project.
 
 ---
 
 ## Installation
 
-Aucune dépendance externe. Python 3.8+ suffit.
+No external dependencies. Python 3.8+ is all you need.
 
 ```bash
-# Rendre les scripts exécutables
+# Make the scripts executable
 chmod +x sologit.py sologit-cli.py
 
-# Accès global via symlinks (à faire une seule fois)
-# Remplace /chemin/vers/ par le dossier où se trouvent les fichiers
-sudo ln -sf /chemin/vers/sologit.py    /usr/local/bin/sologit
-sudo ln -sf /chemin/vers/sologit-cli.py /usr/local/bin/sologit-cli
+# Global access via symlinks (one-time setup)
+# Replace /path/to/ with the folder where the files are stored
+sudo ln -sf /path/to/sologit.py    /usr/local/bin/sologit
+sudo ln -sf /path/to/sologit-cli.py /usr/local/bin/sologit-cli
 ```
 
-Tu peux ensuite taper `sologit` ou `sologit-cli` depuis n'importe quel dossier.
+You can then run `sologit` or `sologit-cli` from any directory.
 
 ---
 
-## Interface interactive (recommandée)
+## Interactive interface (recommended)
 
 ```bash
 sologit-cli
 ```
 
-Lance une interface en mode texte avec navigation au clavier :
-- **↑ ↓** pour naviguer dans les menus
-- **Entrée** pour valider
-- **q** pour annuler / revenir
+Launches a text-based interface with keyboard navigation:
+- **↑ ↓** to navigate menus
+- **Enter** to confirm
+- **q** to cancel / go back
 
-Les listes de commits et de fichiers sont également navigables à la flèche.
+Commit lists and file lists are also arrow-navigable.
 
 ---
 
-## Démarrage rapide (ligne de commande)
+## Quick start (command line)
 
 ```bash
-sologit init                        # initialise le dépôt dans le dossier courant
-sologit commit save_1               # sauvegarde l'état actuel
-sologit log                         # affiche l'historique
-sologit checkout save_1             # revient à l'état de save_1
+sologit init                        # initialize the repo in the current folder
+sologit commit save_1               # save the current state
+sologit log                         # show history
+sologit checkout save_1             # go back to the state of save_1
 ```
 
 ---
 
-## Commandes
+## Commands
 
-### `init` — Initialiser un dépôt
+### `init` — Initialize a repository
 
 ```bash
 sologit init
-sologit init --extension ".tex .bib .py"       # suivre uniquement ces extensions
-sologit init --no_extension ".log .tmp"         # ignorer ces extensions
+sologit init --extension ".tex .bib .py"       # track only these extensions
+sologit init --no_extension ".log .tmp"         # ignore these extensions
 sologit init --extension ".tex .bib" --no_extension ".bak"
 ```
 
-Crée le dossier `.sologit/` et un fichier `.sologitignore` dans le répertoire courant.
+Creates the `.sologit/` folder and a `.sologitignore` file in the current directory.
 
 ---
 
-### `commit` — Sauvegarder l'état actuel
+### `commit` — Save the current state
 
 ```bash
-sologit commit                                  # nom = date automatique
-sologit commit save_1                           # nom court
-sologit commit save_1 "descriptif du commit"   # nom + description
-sologit commit "descriptif avec espaces"        # description seule, nom = date auto
+sologit commit                                  # name = current date/time
+sologit commit save_1                           # short name
+sologit commit save_1 "commit description"     # name + description
+sologit commit "description with spaces"        # description only, name = date
 ```
 
-Après chaque commit, les fichiers modifiés sont affichés avec un diff coloré (numéros de ligne, fond rouge/vert pour les suppressions/ajouts).
+After each commit, modified files are shown with a colored diff (line numbers, red/green background for removals/additions).
 
-Si un commit avec le même nom existe déjà, une confirmation est demandée.
+If a commit with the same name already exists, a confirmation is asked.
 
 ---
 
-### `status` — Voir les modifications en cours
+### `status` — See current changes
 
 ```bash
 sologit status
 ```
 
-Affiche les fichiers ajoutés (`+`), modifiés (`~`) et supprimés (`-`) par rapport au dernier commit.
+Shows added (`+`), modified (`~`) and deleted (`-`) files since the last commit.
 
 ---
 
-### `log` — Afficher l'historique
+### `log` — Show history
 
 ```bash
-sologit log           # tous les commits
-sologit log -n 5      # les 5 derniers uniquement
+sologit log           # all commits
+sologit log -n 5      # last 5 only
 ```
 
-Les tags éventuels sont affichés en badges `[v1.0]` à côté du commit.
+Tags are displayed as `[v1.0]` badges next to the commit.
 
 ---
 
-### `diff` — Voir les modifications
+### `diff` — View changes
 
 ```bash
-sologit diff                        # diff de tous les fichiers modifiés
-sologit diff main.tex               # diff d'un fichier précis
-sologit diff main.tex save_1        # comparaison avec un commit spécifique
+sologit diff                        # diff all modified files
+sologit diff main.tex               # diff a specific file
+sologit diff main.tex save_1        # compare against a specific commit
 ```
 
-Affichage style Claude Code : numéros de ligne ancien/nouveau, fond coloré pour chaque ligne ajoutée ou supprimée.
+Claude Code-style display: old/new line numbers, colored background for each added or removed line.
 
 ---
 
-### `extensions` — Modifier les filtres de fichiers
+### `extensions` — Modify file filters
 
 ```bash
-sologit extensions                                  # affiche le .sologitignore actuel
-sologit extensions --extension ".py .tex .bib"     # redéfinir la liste blanche
-sologit extensions --no_extension ".log .tmp .exe" # redéfinir la liste noire
+sologit extensions                                  # show current .sologitignore
+sologit extensions --extension ".py .tex .bib"     # redefine the whitelist
+sologit extensions --no_extension ".log .tmp .exe" # redefine the blacklist
 ```
 
-Régénère le `.sologitignore` sans toucher à l'historique. Pratique pour changer les types de fichiers suivis après l'init.
+Regenerates `.sologitignore` without touching the history. Useful for changing tracked file types after init.
 
 ---
 
-### `tag` — Marquer un commit
+### `tag` — Mark a commit
 
 ```bash
-sologit tag save_1 v1.0       # ajouter un tag
-sologit tag                    # lister tous les tags
-sologit tag --delete v1.0      # supprimer un tag
+sologit tag save_1 v1.0       # add a tag
+sologit tag                    # list all tags
+sologit tag --delete v1.0      # remove a tag
 ```
 
-Les tags apparaissent dans `sologit log` sous forme de badges.
+Tags appear in `sologit log` as badges.
 
 ---
 
-### `show` — Détails d'un commit
+### `show` — Commit details
 
 ```bash
 sologit show save_1
 ```
 
-Affiche la liste des fichiers du commit avec leur taille et leur hash.
+Shows the list of files in the commit with their size and hash.
 
 ---
 
-### `restore` — Restaurer un fichier
+### `restore` — Restore a file
 
 ```bash
-sologit restore save_1 main.tex           # restaure un seul fichier
-sologit restore save_1 main.tex --force   # sans confirmation
+sologit restore save_1 main.tex           # restore a single file
+sologit restore save_1 main.tex --force   # without confirmation
 ```
 
-Une sauvegarde de sécurité de la version actuelle est créée automatiquement dans `.sologit/backups/`.
+A safety backup of the current version is automatically created in `.sologit/backups/`.
 
 ---
 
-### `checkout` — Revenir à un commit complet
+### `checkout` — Go back to a full commit
 
 ```bash
-sologit checkout save_1           # restaure tous les fichiers du commit
-sologit checkout save_1 --force   # sans confirmation
+sologit checkout save_1           # restore all files from the commit
+sologit checkout save_1 --force   # without confirmation
 ```
 
-Les fichiers absents de ce commit sont supprimés du disque. Une sauvegarde est créée avant toute modification.
+Files absent from that commit are deleted from disk. A backup is created before any modification.
 
 ---
 
-### `amend` — Modifier le dernier commit
+### `amend` — Edit the last commit
 
 ```bash
-sologit amend --name nouveau_nom
-sologit amend --description "nouvelle description"
-sologit amend --name v2 --description "version corrigée"
+sologit amend --name new_name
+sologit amend --description "new description"
+sologit amend --name v2 --description "fixed version"
 ```
 
 ---
 
-### `undo` — Annuler le dernier commit
+### `undo` — Cancel the last commit
 
 ```bash
 sologit undo
-sologit undo --force    # sans confirmation
+sologit undo --force    # without confirmation
 ```
 
-Supprime le dernier commit de l'historique et restaure l'espace de travail à l'état précédent.
+Removes the last commit from history and restores the working directory to the previous state.
 
 ---
 
-### `rename` — Renommer un commit
+### `rename` — Rename a commit
 
 ```bash
 sologit rename save_1 v1_stable
@@ -196,46 +198,48 @@ sologit rename save_1 v1_stable
 
 ---
 
-### `export` — Exporter un commit vers un dossier
+### `export` — Export a commit to a folder
 
 ```bash
-sologit export save_1 ./livraison
-sologit export save_1 ~/Desktop/version_finale
+sologit export save_1 ./release
+sologit export save_1 ~/Desktop/final_version
 ```
+
+Copies all files from the commit to the destination folder, preserving the directory structure.
 
 ---
 
-### `stats` — Statistiques du dépôt
+### `stats` — Repository statistics
 
 ```bash
 sologit stats
 ```
 
-Affiche le nombre de commits, l'espace disque utilisé, et les objets orphelins récupérables.
+Shows the number of commits, disk space used, and recoverable orphan objects.
 
 ---
 
-### `fsck` — Vérifier l'intégrité du dépôt
+### `fsck` — Check repository integrity
 
 ```bash
 sologit fsck
 ```
 
-Vérifie que chaque objet référencé dans l'historique existe et que son hash correspond au contenu. Signale les objets manquants, corrompus ou orphelins.
+Verifies that every object referenced in history exists and that its hash matches its content. Reports missing, corrupted, or orphan objects.
 
 ---
 
-## Le fichier `.sologitignore`
+## The `.sologitignore` file
 
-Créé automatiquement à l'`init`, modifiable avec `sologit extensions`. Fonctionne comme `.gitignore` avec support de la négation `!`.
+Automatically created on `init`, editable with `sologit extensions`. Works like `.gitignore` with negation `!` support.
 
 ```
-# Ignorer des extensions
+# Ignore extensions
 *.log
 *.tmp
 build/
 
-# Liste blanche (ne garder que certains types)
+# Whitelist (track only certain types)
 *
 !*/
 !*.tex
@@ -243,30 +247,30 @@ build/
 !*.png
 ```
 
-Les dossiers `.sologit`, `.git`, `__pycache__`, `venv` et `env` sont toujours ignorés automatiquement.
+The folders `.sologit`, `.git`, `__pycache__`, `venv` and `env` are always ignored automatically.
 
 ---
 
-## Identifier un commit
+## Identifying a commit
 
-Toutes les commandes (`checkout`, `restore`, `diff`, `show`, `rename`, `export`, `tag`…) acceptent :
-- le **nom** du commit : `save_1`
-- le **préfixe de l'ID** (7 caractères) : `3f46276`
+All commands (`checkout`, `restore`, `diff`, `show`, `rename`, `export`, `tag`…) accept:
+- the commit **name**: `save_1`
+- the **ID prefix** (7 characters): `3f46276`
 
-En cas de doublon de nom, le commit le plus récent est utilisé.
+In case of duplicate names, the most recent commit is used.
 
 ---
 
-## Structure interne
+## Internal structure
 
 ```
 .sologit/
-├── history.json        # historique de tous les commits (JSON)
-├── objects/            # contenu des fichiers (content-addressed, sous-dossiers ab/cdef…)
+├── history.json        # full commit history (JSON)
+├── objects/            # file contents (content-addressed, sharded ab/cdef…)
 │   └── ab/
 │       └── cdef1234…
-└── backups/            # sauvegardes automatiques créées avant chaque écrasement
+└── backups/            # automatic backups created before any overwrite
     └── 20260617_143022/
 ```
 
-Chaque objet est identifié par son hash SHA-1. Un même fichier non modifié n'est stocké qu'une seule fois, quel que soit le nombre de commits qui le référencent.
+Each object is identified by its SHA-1 hash. An unchanged file is stored only once, regardless of how many commits reference it.
