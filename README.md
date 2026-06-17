@@ -13,8 +13,9 @@ Aucune dépendance externe. Python 3.8+ suffit.
 chmod +x sologit.py sologit-cli.py
 
 # Accès global via symlinks (à faire une seule fois)
-sudo ln -sf ~/Documents/sologit/sologit.py    /usr/local/bin/sologit
-sudo ln -sf ~/Documents/sologit/sologit-cli.py /usr/local/bin/sologit-cli
+# Remplace /chemin/vers/ par le dossier où se trouvent les fichiers
+sudo ln -sf /chemin/vers/sologit.py    /usr/local/bin/sologit
+sudo ln -sf /chemin/vers/sologit-cli.py /usr/local/bin/sologit-cli
 ```
 
 Tu peux ensuite taper `sologit` ou `sologit-cli` depuis n'importe quel dossier.
